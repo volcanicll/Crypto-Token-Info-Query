@@ -7,127 +7,104 @@ import {
   handleOKXResponse,
 } from "@/utils/okx";
 
-interface OKXTokenInfo {
-  volume24h?: string;
-  holdersCount?: number;
-  topHolders?: {
-    address: string;
-    balance: string;
-    percentage: string;
-  }[];
+interface OKXMarketTickerData {
+  instId: string;
+  last: string;
+  lastSz: string;
+  vol24h: string;
+  volCcy24h: string;
+  ts: string;
 }
 
-interface ChainApiResponse {
-  volume24h?: string;
-  holders?: {
-    total: number;
-    whales: {
-      count: number;
-      percentage: number;
-    };
-  };
+interface OKXMarketResponse {
+  code: string;
+  msg: string;
+  data: OKXMarketTickerData[];
 }
 
-async function fetchOKXData(
+interface TokenMarketData {
+  volume24h: string;
+  price: string;
+  timestamp: string;
+}
+
+async function fetchOKXMarketData(
   address: string,
   chain: string
-): Promise<OKXTokenInfo> {
+): Promise<TokenMarketData> {
   try {
-    const endpoint = "/token/info";
+    const endpoint = "/ticker";
+    // Format: token_blockchain_spot
+    const chainId = chain.toUpperCase() === "SOL" ? "solana" : "base";
+    const instId = `${address.toLowerCase()}_${chainId}_spot`;
     const params = {
-      token: address,
-      chainId: chain === "SOL" ? "solana" : "base",
+      instId,
     };
 
     const requestPath = buildOKXRequestPath(endpoint, params);
-    const headers = generateRequestHeaders("GET", requestPath);
+    const maxRetries = 3;
+    const timeout = 5000;
 
-    const response = await axios.get(
-      `${config.api.okx.baseUrl}${requestPath}`,
-      {
-        headers,
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        const response = await axios.get<OKXMarketResponse>(
+          `${config.api.okx.baseUrl}${requestPath}`
+        );
+
+        if (response.data.code === "0" && response.data.data.length > 0) {
+          const tickerData = response.data.data[0];
+          return {
+            volume24h: tickerData.vol24h,
+            price: tickerData.last,
+            timestamp: tickerData.ts,
+          };
+        }
+        throw new Error(`Invalid response from OKX API: ${response.data.msg}`);
+      } catch (retryError: any) {
+        if (attempt === maxRetries) {
+          throw retryError;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 1000 * attempt));
       }
-    );
+    }
 
-    return handleOKXResponse<OKXTokenInfo>(response.data);
+    return {
+      volume24h: "0",
+      price: "0",
+      timestamp: Date.now().toString(),
+    };
   } catch (error) {
-    console.error(`Error fetching OKX data for ${chain}:`, error);
-    throw error;
+    console.error(`Error fetching OKX market data for ${chain}:`, error);
+    return {
+      volume24h: "0",
+      price: "0",
+      timestamp: Date.now().toString(),
+    };
   }
 }
 
-async function fetchSolanaTokenInfo(
-  address: string
-): Promise<ChainApiResponse> {
+async function fetchSolanaTokenInfo(address: string): Promise<TokenMarketData> {
   try {
-    const tokenData = await fetchOKXData(address, "SOL");
-
-    // Calculate whale metrics
-    const whales = (tokenData.topHolders || []).filter(
-      (holder) => parseFloat(holder.percentage) >= 1 // 1% or more
-    );
-
-    return {
-      volume24h: tokenData.volume24h || "0",
-      holders: {
-        total: tokenData.holdersCount || 0,
-        whales: {
-          count: whales.length,
-          percentage: whales.reduce(
-            (acc, whale) => acc + parseFloat(whale.percentage),
-            0
-          ),
-        },
-      },
-    };
+    return await fetchOKXMarketData(address, "SOL");
   } catch (error) {
     console.error("Error fetching Solana token info:", error);
     return {
       volume24h: "0",
-      holders: {
-        total: 0,
-        whales: {
-          count: 0,
-          percentage: 0,
-        },
-      },
+      price: "0",
+      timestamp: Date.now().toString(),
     };
   }
 }
 
-async function fetchBaseTokenInfo(address: string): Promise<ChainApiResponse> {
+async function fetchBaseTokenInfo(address: string): Promise<TokenMarketData> {
   try {
-    const tokenData = await fetchOKXData(address, "BASE");
-
-    // Calculate whale metrics
-    const whales = (tokenData.topHolders || []).filter(
-      (holder) => parseFloat(holder.percentage) >= 1 // 1% or more
-    );
-
-    return {
-      volume24h: tokenData.volume24h || "0",
-      holders: {
-        total: tokenData.holdersCount || 0,
-        whales: {
-          count: whales.length,
-          percentage: whales.reduce(
-            (acc, whale) => acc + parseFloat(whale.percentage),
-            0
-          ),
-        },
-      },
-    };
+    return await fetchOKXMarketData(address, "BASE");
   } catch (error) {
     console.error("Error fetching Base token info:", error);
     return {
       volume24h: "0",
-      holders: {
-        total: 0,
-        whales: {
-          count: 0,
-          percentage: 0,
-        },
-      },
+      price: "0",
+      timestamp: Date.now().toString(),
     };
   }
 }
@@ -137,23 +114,21 @@ export async function getTokenBasicInfo(
   blockchain: string
 ): Promise<BasicTokenInfo> {
   try {
-    let chainData: ChainApiResponse;
+    let marketData: TokenMarketData;
 
     switch (blockchain.toUpperCase()) {
       case "SOL":
-        chainData = await fetchSolanaTokenInfo(contract);
+        marketData = await fetchSolanaTokenInfo(contract);
         break;
       case "BASE":
-        chainData = await fetchBaseTokenInfo(contract);
+        marketData = await fetchBaseTokenInfo(contract);
         break;
       default:
         throw new Error("Unsupported blockchain");
     }
 
     return {
-      volume24h: chainData.volume24h,
-      holders: chainData.holders?.total,
-      whales: chainData.holders?.whales,
+      volume24h: marketData.volume24h,
     };
   } catch (error) {
     console.error("Error fetching token info:", error);

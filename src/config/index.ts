@@ -8,7 +8,7 @@ const config = {
       host: "twitter-api45.p.rapidapi.com",
     },
     okx: {
-      baseUrl: "https://www.okx.com/api/v5/dex",
+      baseUrl: "https://www.okx.com/api/v5/market",
     },
   },
   env: {
