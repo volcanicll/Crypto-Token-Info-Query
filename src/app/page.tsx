@@ -38,7 +38,6 @@ export default function Home() {
     register,
     handleSubmit,
     formState: { errors, isSubmitting },
-    reset,
   } = useForm<SearchFormData>({
     resolver: zodResolver(searchSchema),
     defaultValues: {

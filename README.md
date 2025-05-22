@@ -25,16 +25,27 @@ Create a `.env` file in the root directory with the following variables:
 
 ```env
 # Supabase
-NEXT_PUBLIC_SUPABASE_URL=your_supabase_url
-NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
-SUPABASE_SERVICE_ROLE_KEY=your_supabase_service_role_key
+NEXT_PUBLIC_SUPABASE_URL=
+NEXT_PUBLIC_SUPABASE_ANON_KEY=
+SUPABASE_SERVICE_ROLE_KEY=
 
 # OpenRouter
-OPENROUTER_API_KEY=your_openrouter_api_key
+OPENROUTER_API_KEY=
+
+# Twitter API via RapidAPI
+RAPID_API_KEY=
+
+# OKX API
+OKX_API_KEY=
+OKX_SECRET_KEY=
+OKX_PASSPHRASE=
+PROJECT_ID=
 
 # Access Code
-NEXT_PUBLIC_ACCESS_CODE=your_access_code
+NEXT_PUBLIC_ACCESS_CODE=
 
+# Application URL
+NEXT_PUBLIC_APP_URL=
 
 # Note: For OKX API access
 # 1. Register at OKX and create API keys at https://www.okx.com/account/my-api
@@ -47,7 +58,7 @@ NEXT_PUBLIC_ACCESS_CODE=your_access_code
 1. Clone the repository:
 
 ```bash
-git clone https://github.com/yourusername/crypto-token-info.git
+git clone https://github.com/volcanicll/Crypto-Token-Info-Query
 cd crypto-token-info
 ```
 

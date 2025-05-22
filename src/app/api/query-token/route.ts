@@ -1,4 +1,3 @@
-import { OpenAI } from "openai";
 import { NextResponse } from "next/server";
 import { TokenQuery, TokenResponse } from "@/types";
 import { supabaseAdmin } from "@/utils/supabase";
