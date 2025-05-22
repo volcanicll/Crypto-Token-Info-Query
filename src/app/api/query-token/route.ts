@@ -22,8 +22,30 @@ export async function POST(
       throw new APIError("Invalid blockchain specified", 400);
     }
 
-    // Store query in Supabase
-    const { error: logError } = await supabaseAdmin
+    let tokenInfo: string | undefined;
+    let twitterAnalysis:
+      | { search_summary?: string; account_summary?: string }
+      | undefined;
+    let basicInfo = undefined;
+    let error = undefined;
+
+    try {
+      if (analysis_type === "ai") {
+        // Get Twitter analysis
+        twitterAnalysis = await analyzeTwitter(
+          contract_address.slice(0, 8), // Use first 8 chars as symbol
+          contract_address
+        );
+      } else {
+        // Get basic token information
+        basicInfo = await getTokenBasicInfo(contract_address, blockchain);
+      }
+    } catch (err) {
+      error = err instanceof Error ? err.message : "Analysis failed";
+    }
+
+    // Store query and results in Supabase
+    const { data: queryData, error: queryError } = await supabaseAdmin
       .from("token_queries")
       .insert([
         {
@@ -32,28 +54,34 @@ export async function POST(
           analysis_type,
           queried_at: new Date().toISOString(),
         },
-      ]);
+      ])
+      .select("query_id")
+      .single();
 
-    if (logError) {
-      console.error("Error logging query:", logError);
+    if (queryError) {
+      console.error("Error logging query:", queryError);
       throw new APIError("Failed to log query", 500);
     }
 
-    let tokenInfo: string | undefined;
-    let twitterAnalysis:
-      | { search_summary?: string; account_summary?: string }
-      | undefined;
-    let basicInfo = undefined;
+    // Store analysis results
+    const { error: resultError } = await supabaseAdmin
+      .from("analysis_results")
+      .insert([
+        {
+          query_id: queryData.query_id,
+          analysis_type,
+          twitter_analysis: twitterAnalysis
+            ? JSON.stringify(twitterAnalysis)
+            : null,
+          basic_metrics: basicInfo ? JSON.stringify(basicInfo) : null,
+          error: error,
+          completed_at: new Date().toISOString(),
+        },
+      ]);
 
-    if (analysis_type === "ai") {
-      // Get Twitter analysis
-      twitterAnalysis = await analyzeTwitter(
-        contract_address.slice(0, 8), // Use first 8 chars as symbol
-        contract_address
-      );
-    } else {
-      // Get basic token information
-      basicInfo = await getTokenBasicInfo(contract_address, blockchain);
+    if (resultError) {
+      console.error("Error storing results:", resultError);
+      // Continue execution as the analysis was successful
     }
 
     return NextResponse.json({
@@ -64,6 +92,7 @@ export async function POST(
         basicInfo,
         blockchain,
         contractAddress: contract_address,
+        query_id: queryData.query_id,
       },
     });
   } catch (error) {
