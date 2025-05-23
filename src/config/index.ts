@@ -21,6 +21,7 @@ const config = {
     okxApiKey: process.env.OKX_API_KEY,
     okxSecretKey: process.env.OKX_SECRET_KEY,
     okxPassphrase: process.env.OKX_PASSPHRASE,
+    okxProjectId: process.env.OKX_PROJECT_ID,
     accessCode: process.env.NEXT_PUBLIC_ACCESS_CODE,
     appUrl: process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000",
   },

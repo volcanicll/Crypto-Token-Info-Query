@@ -39,6 +39,12 @@ export interface BasicTokenInfo {
     count: number;
     percentage: number;
   };
+  price?: string;
+  timestamp?: string;
+  symbol?: string;
+  decimals?: number;
+  name?: string;
+  logoUrl?: string;
 }
 
 export interface AnalysisRequest {

@@ -1,31 +1,23 @@
 import { BasicTokenInfo } from "@/types";
-import axios from "axios";
-import config from "@/config";
-import {
-  buildOKXRequestPath,
-  generateRequestHeaders,
-  handleOKXResponse,
-} from "@/utils/okx";
+import { okxDexClient } from "./okxSdkClient";
 
-interface OKXMarketTickerData {
-  instId: string;
-  last: string;
-  lastSz: string;
-  vol24h: string;
-  volCcy24h: string;
-  ts: string;
-}
+const DEFAULT_USDC_ADDRESSES: { [key: string]: string } = {
+  SOL: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+  BASE: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+};
 
-interface OKXMarketResponse {
-  code: string;
-  msg: string;
-  data: OKXMarketTickerData[];
-}
+const CHAIN_ID_MAP: { [key: string]: string } = {
+  SOL: "501",
+  BASE: "8453",
+};
 
 interface TokenMarketData {
-  volume24h: string;
   price: string;
   timestamp: string;
+  symbol?: string;
+  decimals?: number;
+  name?: string;
+  logoUrl?: string;
 }
 
 async function fetchOKXMarketData(
@@ -33,52 +25,85 @@ async function fetchOKXMarketData(
   chain: string
 ): Promise<TokenMarketData> {
   try {
-    const endpoint = "/ticker";
-    // Format: token_blockchain_spot
-    const chainId = chain.toUpperCase() === "SOL" ? "solana" : "base";
-    const instId = `${address.toLowerCase()}_${chainId}_spot`;
-    const params = {
-      instId,
-    };
+    const upperChain = chain.toUpperCase();
+    const toTokenAddress = DEFAULT_USDC_ADDRESSES[upperChain];
+    const chainId = CHAIN_ID_MAP[upperChain];
 
-    const requestPath = buildOKXRequestPath(endpoint, params);
-    const maxRetries = 3;
-    const timeout = 5000;
+    if (!toTokenAddress || !chainId) {
+      throw new Error(`Unsupported chain for OKX SDK: ${chain}`);
+    }
 
-    for (let attempt = 1; attempt <= maxRetries; attempt++) {
-      try {
-        const response = await axios.get<OKXMarketResponse>(
-          `${config.api.okx.baseUrl}${requestPath}`
-        );
+    console.log(
+      `Fetching quote via SDK for ${address} on chain ${chain} (ID: ${chainId}) against USDC (${toTokenAddress})`
+    );
 
-        if (response.data.code === "0" && response.data.data.length > 0) {
-          const tickerData = response.data.data[0];
-          return {
-            volume24h: tickerData.vol24h,
-            price: tickerData.last,
-            timestamp: tickerData.ts,
-          };
+    const quote = await okxDexClient.dex.getQuote({
+      chainId,
+      fromTokenAddress: address,
+      toTokenAddress,
+      amount: "1",
+      slippage: "0.5",
+    });
+
+    console.log("OKX SDK getQuote response:", JSON.stringify(quote, null, 2));
+
+    let extractedPrice: string | undefined;
+    let extractedSymbol: string | undefined;
+    let extractedDecimals: number | undefined;
+    let extractedName: string | undefined;
+    let extractedLogoUrl: string | undefined;
+
+    if (quote && quote.data && quote.data.length > 0) {
+      const quoteData = quote.data[0];
+      if (quoteData.fromToken) {
+        if (quoteData.fromToken.tokenUnitPrice) {
+          extractedPrice = quoteData.fromToken.tokenUnitPrice;
         }
-        throw new Error(`Invalid response from OKX API: ${response.data.msg}`);
-      } catch (retryError: any) {
-        if (attempt === maxRetries) {
-          throw retryError;
+        if (quoteData.fromToken.tokenSymbol) {
+          extractedSymbol = quoteData.fromToken.tokenSymbol;
         }
-        await new Promise((resolve) => setTimeout(resolve, 1000 * attempt));
+        if (quoteData.fromToken.decimal) {
+          extractedDecimals = parseInt(quoteData.fromToken.decimal, 10);
+        }
+        if ((quoteData.fromToken as any).name) {
+          extractedName = (quoteData.fromToken as any).name;
+        }
+        if ((quoteData.fromToken as any).logoURI) {
+          extractedLogoUrl = (quoteData.fromToken as any).logoURI;
+        }
       }
     }
 
+    if (!extractedPrice) {
+      throw new Error(
+        "Price information (fromToken.tokenUnitPrice) not found in OKX SDK getQuote response."
+      );
+    }
+
     return {
-      volume24h: "0",
-      price: "0",
+      price: extractedPrice,
       timestamp: Date.now().toString(),
+      symbol: extractedSymbol,
+      decimals: extractedDecimals,
+      name: extractedName,
+      logoUrl: extractedLogoUrl,
     };
-  } catch (error) {
-    console.error(`Error fetching OKX market data for ${chain}:`, error);
+  } catch (error: any) {
+    console.error(
+      `Error fetching OKX market data via SDK for ${address} on ${chain}:`,
+      error.message,
+      error.stack ? "\nStack: " + error.stack : "",
+      error.response?.data
+        ? "\nResponse Data: " + JSON.stringify(error.response.data)
+        : ""
+    );
     return {
-      volume24h: "0",
       price: "0",
       timestamp: Date.now().toString(),
+      symbol: undefined,
+      decimals: undefined,
+      name: undefined,
+      logoUrl: undefined,
     };
   }
 }
@@ -89,9 +114,12 @@ async function fetchSolanaTokenInfo(address: string): Promise<TokenMarketData> {
   } catch (error) {
     console.error("Error fetching Solana token info:", error);
     return {
-      volume24h: "0",
       price: "0",
       timestamp: Date.now().toString(),
+      symbol: undefined,
+      decimals: undefined,
+      name: undefined,
+      logoUrl: undefined,
     };
   }
 }
@@ -102,9 +130,12 @@ async function fetchBaseTokenInfo(address: string): Promise<TokenMarketData> {
   } catch (error) {
     console.error("Error fetching Base token info:", error);
     return {
-      volume24h: "0",
       price: "0",
       timestamp: Date.now().toString(),
+      symbol: undefined,
+      decimals: undefined,
+      name: undefined,
+      logoUrl: undefined,
     };
   }
 }
@@ -128,7 +159,12 @@ export async function getTokenBasicInfo(
     }
 
     return {
-      volume24h: marketData.volume24h,
+      price: marketData.price,
+      timestamp: marketData.timestamp,
+      symbol: marketData.symbol,
+      decimals: marketData.decimals,
+      name: marketData.name,
+      logoUrl: marketData.logoUrl,
     };
   } catch (error) {
     console.error("Error fetching token info:", error);
